@@ -1,4 +1,4 @@
-# 土壤类型预测与可视化系统
+![image](https://github.com/user-attachments/assets/7a77c368-04a0-4887-951a-d2558bf09b82)# 土壤类型预测与可视化系统
 
 这是一个基于机器学习的土壤类型预测与可视化系统，用于分析和预测湖北省的土壤类型分布。系统集成了数据可视化、机器学习预测和地理空间分析功能。
 
@@ -110,4 +110,11 @@ python app.py
 ## 技术支持
 
 如有问题，请提交Issue或联系技术支持。
+## 运行图片
+![image](https://github.com/user-attachments/assets/69c422dd-7e80-45c0-93f3-48d4173fdc6f)
+![image](https://github.com/user-attachments/assets/eab33854-d6b9-45c1-93eb-baee341425da)
+![image](https://github.com/user-attachments/assets/47531761-0e32-4dc2-96e2-902081d2d6f1)
+![image](https://github.com/user-attachments/assets/99a3c237-b479-4379-9d11-73f22d5ef139)
+
+
 
