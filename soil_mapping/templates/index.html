@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>湖北省土壤类型预测系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        #map { height: 400px; margin-bottom: 20px; }
+        .progress { height: 25px; margin-bottom: 10px; }
+        .progress-bar { font-size: 14px; line-height: 25px; }
+        .card { margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn { margin-right: 5px; }
+        .chart-container { height: 400px; margin-bottom: 20px; }
+        .sample-point-popup { padding: 10px; }
+        .sample-point-popup table { margin-bottom: 0; }
+        .sample-point-popup h6 { margin-bottom: 10px; }
+        .cluster-icon {
+            background-color: #3388ff;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 40px;
+            font-weight: bold;
+        }
+        .prediction-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        .prediction-details {
+            margin-top: 10px;
+            display: none;
+        }
+        .export-options {
+            margin-top: 10px;
+            display: none;
+        }
+        /* 新增样式 */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .tooltip-custom {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip-custom .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tooltip-custom:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        .chart-legend {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .chart-legend-item {
+            display: inline-block;
+            margin-right: 15px;
+        }
+        .chart-legend-color {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h2 class="mb-4 text-center">湖北省土壤类型预测系统</h2>
+        
+        <!-- 地图和控制面板 -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">样本点分布</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">操作面板</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 样本点输入 -->
+                        <div class="mb-4">
+                            <h6 class="mb-3">样本点数据</h6>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="samplePointSource" id="defaultPoints" value="default" checked>
+                                <label class="form-check-label" for="defaultPoints">
+                                    使用默认样本点
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="samplePointSource" id="customPoints" value="custom">
+                                <label class="form-check-label" for="customPoints">
+                                    使用自定义样本点
+                                </label>
+                            </div>
+                            <div id="customPointsInput" class="mt-3" style="display: none;">
+                                <div class="mb-3">
+                                    <label for="samplePointFile" class="form-label">上传CSV文件</label>
+                                    <input class="form-control" type="file" id="samplePointFile" accept=".csv">
+                                    <div class="form-text">CSV文件应包含以下列：city, latitude, longitude, soil_type, soil_texture, soil_color</div>
+                                </div>
+                                <div class="mb-3">
+                                    <button id="downloadTemplate" class="btn btn-outline-secondary btn-sm">下载模板</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 筛选选项 -->
+                        <div class="mb-4">
+                            <h6 class="mb-3">数据筛选</h6>
+                            <div class="tooltip-custom mb-2">
+                                <label class="form-label">地区筛选</label>
+                                <span class="tooltip-text">选择特定地区查看样本点分布</span>
+                            </div>
+                            <select id="cityFilter" class="form-select mb-3">
+                                <option value="">全部地区</option>
+                            </select>
+                            
+                            <div class="tooltip-custom mb-2">
+                                <label class="form-label">土壤类型</label>
+                                <span class="tooltip-text">按土壤类型筛选样本点</span>
+                            </div>
+                            <select id="soilTypeFilter" class="form-select mb-3">
+                                <option value="">全部类型</option>
+                            </select>
+                            
+                            <div class="tooltip-custom mb-2">
+                                <label class="form-label">土壤质地</label>
+                                <span class="tooltip-text">按土壤质地筛选样本点</span>
+                            </div>
+                            <select id="soilTextureFilter" class="form-select mb-3">
+                                <option value="">全部质地</option>
+                            </select>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button id="trainModel" class="btn btn-primary">
+                                <i class="fas fa-cogs"></i> 训练模型
+                            </button>
+                            <button id="predict" class="btn btn-success" disabled>
+                                <i class="fas fa-chart-line"></i> 生成预测
+                            </button>
+                        </div>
+                        <div id="modelStatus" class="alert mt-3" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 预测进度 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">预测进度</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress">
+                            <div id="predictionProgress" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%">0%</div>
+                        </div>
+                        <div id="predictionStatus" class="text-center mt-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 土壤属性分布图表 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">土壤属性分布</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div id="soilTypeChart" style="height: 400px;"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div id="soilTextureChart" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 环境因子分布图表 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">环境因子分布</h5>
+            </div>
+            <div class="card-body">
+                <div id="environmentalFactorsChart" style="height: 400px;"></div>
+            </div>
+        </div>
+
+        <!-- 模型评估指标 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">模型评估指标</h5>
+            </div>
+            <div class="card-body">
+                <div id="modelMetrics" style="height: 300px;"></div>
+            </div>
+        </div>
+
+        <!-- 特征重要性 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">特征重要性</h5>
+            </div>
+            <div class="card-body">
+                <div id="featureImportance" style="height: 300px;"></div>
+            </div>
+        </div>
+
+        <!-- 预测结果 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">预测结果</h5>
+            </div>
+            <div class="card-body">
+                <div id="predictionStats" class="prediction-status"></div>
+                <div id="predictionDetails" class="prediction-details"></div>
+                <div id="exportOptions" class="export-options"></div>
+            </div>
+        </div>
+
+        <!-- 下载按钮 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">下载结果</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary download-btn" data-format="csv" disabled>下载CSV</button>
+                    <button class="btn btn-primary download-btn" data-format="json" disabled>下载JSON</button>
+                    <button class="btn btn-primary download-btn" data-format="geojson" disabled>下载GeoJSON</button>
+                    <button class="btn btn-primary download-btn" data-format="confusion_matrix" disabled>下载混淆矩阵图</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加加载遮罩 -->
+    <div class="loading-overlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script>
+        // 初始化地图
+        const map = L.map('map').setView([31.2, 112.3], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 添加湖北省边界框
+        L.rectangle([[29.05, 108.21], [33.20, 116.07]], {
+            color: "#ff7800",
+            weight: 1,
+            fillOpacity: 0.1
+        }).addTo(map);
+
+        // 创建聚类图层
+        const markers = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            maxClusterRadius: 30,
+            iconCreateFunction: function(cluster) {
+                return L.divIcon({
+                    html: `<div class="cluster-icon">${cluster.getChildCount()}</div>`,
+                    className: 'custom-cluster-icon',
+                    iconSize: L.point(40, 40)
+                });
+            }
+        });
+
+        // 加载样本点
+        async function loadSamplePoints() {
+            try {
+                const response = await fetch('/api/sample_points');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                if (data.status !== 'success' || !data.points || !Array.isArray(data.points)) {
+                    throw new Error('无效的样本点数据格式');
+                }
+                
+                // 更新筛选选项
+                if (data.filter_options) {
+                    updateFilterOptions(data.filter_options);
+                }
+                
+                // 显示所有样本点
+                displayPoints(data.points);
+                
+            } catch (error) {
+                console.error('加载样本点失败:', error);
+                showError('加载样本点失败: ' + error.message);
+            }
+        }
+
+        // 更新筛选选项
+        function updateFilterOptions(options) {
+            const citySelect = document.getElementById('cityFilter');
+            const soilTypeSelect = document.getElementById('soilTypeFilter');
+            const soilTextureSelect = document.getElementById('soilTextureFilter');
+
+            // 清空现有选项
+            citySelect.innerHTML = '<option value="">全部地区</option>';
+            soilTypeSelect.innerHTML = '<option value="">全部类型</option>';
+            soilTextureSelect.innerHTML = '<option value="">全部质地</option>';
+
+            // 添加新选项
+            if (options.cities) {
+                options.cities.forEach(city => {
+                    const opt = document.createElement('option');
+                    opt.value = city;
+                    opt.textContent = city;
+                    citySelect.appendChild(opt);
+                });
+            }
+
+            if (options.soil_types) {
+                options.soil_types.forEach(type => {
+                    const opt = document.createElement('option');
+                    opt.value = type;
+                    opt.textContent = type;
+                    soilTypeSelect.appendChild(opt);
+                });
+            }
+
+            if (options.soil_textures) {
+                options.soil_textures.forEach(texture => {
+                    const opt = document.createElement('option');
+                    opt.value = texture;
+                    opt.textContent = texture;
+                    soilTextureSelect.appendChild(opt);
+                });
+            }
+
+            // 添加筛选事件
+            [citySelect, soilTypeSelect, soilTextureSelect].forEach(select => {
+                select.addEventListener('change', filterPoints);
+            });
+        }
+
+        // 筛选并显示样本点
+        function filterPoints() {
+            const city = document.getElementById('cityFilter').value;
+            const soilType = document.getElementById('soilTypeFilter').value;
+            const soilTexture = document.getElementById('soilTextureFilter').value;
+
+            // 清除现有图层
+            markers.clearLayers();
+
+            // 重新获取并筛选样本点
+            fetch('/api/sample_points')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status !== 'success' || !data.points || !Array.isArray(data.points)) {
+                        throw new Error('无效的样本点数据格式');
+                    }
+                    
+                    const filteredPoints = data.points.filter(point => {
+                        return (!city || point.city === city) &&
+                               (!soilType || point.soil_type === soilType) &&
+                               (!soilTexture || point.soil_texture === soilTexture);
+                    });
+                    
+                    displayPoints(filteredPoints);
+                })
+                .catch(error => {
+                    console.error('筛选样本点失败:', error);
+                    showError('筛选样本点失败: ' + error.message);
+                });
+        }
+
+        // 显示样本点
+        function displayPoints(points) {
+            if (!Array.isArray(points)) {
+                console.error('Invalid points data:', points);
+                return;
+            }
+
+            markers.clearLayers();
+            
+            points.forEach(point => {
+                if (!point || typeof point.latitude !== 'number' || typeof point.longitude !== 'number') {
+                    console.error('Invalid point data:', point);
+                    return;
+                }
+
+                const marker = L.circleMarker([point.latitude, point.longitude], {
+                    radius: 8,
+                    fillColor: getColorForSoilType(point.soil_type),
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                });
+
+                const popupContent = `
+                    <div class="sample-point-popup">
+                        <h6>${point.city || '未知地区'}</h6>
+                        <table class="table table-sm">
+                            <tr><td>土壤类型:</td><td>${point.soil_type || '未知'}</td></tr>
+                            <tr><td>土壤质地:</td><td>${point.soil_texture || '未知'}</td></tr>
+                            <tr><td>土壤颜色:</td><td>${point.soil_color || '未知'}</td></tr>
+                            <tr><td>经度:</td><td>${point.longitude.toFixed(4)}</td></tr>
+                            <tr><td>纬度:</td><td>${point.latitude.toFixed(4)}</td></tr>
+                        </table>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+                markers.addLayer(marker);
+            });
+
+            map.addLayer(markers);
+            map.fitBounds(markers.getBounds());
+        }
+
+        // 初始化图表
+        const soilTypeChart = echarts.init(document.getElementById('soilTypeChart'));
+        const soilTextureChart = echarts.init(document.getElementById('soilTextureChart'));
+        const environmentalFactorsChart = echarts.init(document.getElementById('environmentalFactorsChart'));
+        const modelMetricsChart = echarts.init(document.getElementById('modelMetrics'));
+        const featureImportanceChart = echarts.init(document.getElementById('featureImportance'));
+
+        // 更新土壤类型分布图表
+        function updateSoilTypeChart(data) {
+            if (!data || !data.soil_types) {
+                const option = {
+                    title: { 
+                        text: '土壤类型分布 (等待预测...)',
+                        left: 'center'
+                    }
+                };
+                soilTypeChart.setOption(option);
+                return;
+            }
+
+            // 合并所有城市的土壤类型数据
+            const typeData = {};
+            Object.values(data.soil_types).forEach(cityTypes => {
+                Object.entries(cityTypes).forEach(([type, count]) => {
+                    typeData[type] = (typeData[type] || 0) + count;
+                });
+            });
+
+            // 转换为图表数据格式
+            const chartData = Object.entries(typeData).map(([type, count]) => ({
+                name: type,
+                value: count
+            }));
+
+            const option = {
+                title: {
+                    text: '土壤类型分布',
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{a} <br/>{b}: {c} ({d}%)'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left',
+                    data: chartData.map(item => item.name)
+                },
+                series: [
+                    {
+                        name: '土壤类型',
+                        type: 'pie',
+                        radius: '50%',
+                        data: chartData,
+                        emphasis: {
+                            itemStyle: {
+                                shadowBlur: 10,
+                                shadowOffsetX: 0,
+                                shadowColor: 'rgba(0, 0, 0, 0.5)'
+                            }
+                        }
+                    }
+                ]
+            };
+
+            soilTypeChart.setOption(option);
+        }
+
+        // 更新土壤质地分布图表
+        function updateSoilTextureChart(data) {
+            if (!data || !data.soil_textures) {
+                const option = {
+                    title: { 
+                        text: '土壤质地分布 (等待预测...)',
+                        left: 'center'
+                    }
+                };
+                soilTextureChart.setOption(option);
+                return;
+            }
+
+            // 合并所有城市的土壤质地数据
+            const textureData = {};
+            Object.values(data.soil_textures).forEach(cityTextures => {
+                Object.entries(cityTextures).forEach(([texture, count]) => {
+                    textureData[texture] = (textureData[texture] || 0) + count;
+                });
+            });
+
+            // 转换为图表数据格式
+            const chartData = Object.entries(textureData).map(([texture, count]) => ({
+                name: texture,
+                value: count
+            }));
+
+            const option = {
+                title: {
+                    text: '土壤质地分布',
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{a} <br/>{b}: {c} ({d}%)'
+                },
+                legend: {
+                    orient: 'vertical',
+                    right: 'right',
+                    data: chartData.map(item => item.name)
+                },
+                series: [
+                    {
+                        name: '土壤质地',
+                        type: 'pie',
+                        radius: '50%',
+                        data: chartData,
+                        emphasis: {
+                            itemStyle: {
+                                shadowBlur: 10,
+                                shadowOffsetX: 0,
+                                shadowColor: 'rgba(0, 0, 0, 0.5)'
+                            }
+                        }
+                    }
+                ]
+            };
+
+            soilTextureChart.setOption(option);
+        }
+
+        // 更新环境因子分布图表
+        function updateEnvironmentalFactorsChart(data) {
+            if (!data) {
+                const option = {
+                    title: { 
+                        text: '环境因子分布 (等待数据...)',
+                        left: 'center'
+                    }
+                };
+                environmentalFactorsChart.setOption(option);
+                return;
+            }
+
+            const factors = Object.entries(data);
+            const series = [];
+            const colors = ['#2ecc71', '#e74c3c', '#3498db', '#27ae60', '#9b59b6', '#f1c40f'];
+
+            // 为每个环境因子创建单独的系列
+            factors.forEach(([key, factor], index) => {
+                const name = `${factor.name}${factor.unit ? ` (${factor.unit})` : ''}`;
+                
+                // 创建数据点
+                const dataPoints = [];
+                const step = (factor.max - factor.min) / 10;
+                for (let i = 0; i <= 10; i++) {
+                    const value = factor.min + step * i;
+                    dataPoints.push({
+                        value: value,
+                        itemStyle: {
+                            color: colors[index % colors.length]
+                        }
+                    });
+                }
+                
+                series.push({
+                    name: name,
+                    type: 'scatter',
+                    data: dataPoints,
+                    symbolSize: 8,
+                    markLine: {
+                        silent: true,
+                        symbol: ['none', 'none'],
+                        label: {
+                            show: true,
+                            position: 'start',
+                            formatter: '{b}'
+                        },
+                        data: [
+                            {
+                                name: `最小值: ${factor.min.toFixed(2)}`,
+                                yAxis: index,
+                                xAxis: factor.min
+                            },
+                            {
+                                name: `最大值: ${factor.max.toFixed(2)}`,
+                                yAxis: index,
+                                xAxis: factor.max
+                            },
+                            {
+                                name: `均值: ${factor.mean.toFixed(2)}`,
+                                yAxis: index,
+                                xAxis: factor.mean
+                            }
+                        ]
+                    },
+                    markArea: {
+                        silent: true,
+                        data: [[{
+                            name: 'Q1-Q3区间',
+                            yAxis: index - 0.4,
+                            xAxis: factor.q1
+                        }, {
+                            yAxis: index + 0.4,
+                            xAxis: factor.q3
+                        }]],
+                        itemStyle: {
+                            color: colors[index % colors.length],
+                            opacity: 0.2
+                        }
+                    }
+                });
+            });
+
+            const option = {
+                title: {
+                    text: '环境因子分布',
+                    left: 'center',
+                    top: 10
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        const factor = data[Object.keys(data)[params[0].seriesIndex]];
+                        return `${factor.name}${factor.unit ? ` (${factor.unit})` : ''}<br/>
+                               最小值: ${factor.min.toFixed(2)}<br/>
+                               最大值: ${factor.max.toFixed(2)}<br/>
+                               平均值: ${factor.mean.toFixed(2)}<br/>
+                               中位数: ${factor.median.toFixed(2)}<br/>
+                               标准差: ${factor.std.toFixed(2)}<br/>
+                               Q1: ${factor.q1.toFixed(2)}<br/>
+                               Q3: ${factor.q3.toFixed(2)}`;
+                    }
+                },
+                grid: {
+                    left: '15%',
+                    right: '15%',
+                    top: '10%',
+                    bottom: '10%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'value',
+                    scale: true,
+                    axisLabel: {
+                        formatter: '{value}'
+                    },
+                    splitLine: {
+                        show: true,
+                        lineStyle: {
+                            type: 'dashed'
+                        }
+                    }
+                },
+                yAxis: {
+                    type: 'category',
+                    data: factors.map(([_, factor]) => 
+                        `${factor.name}${factor.unit ? ` (${factor.unit})` : ''}`
+                    ),
+                    axisLabel: {
+                        fontSize: 12,
+                        width: 120,
+                        overflow: 'break',
+                        interval: 0
+                    }
+                },
+                series: series
+            };
+
+            environmentalFactorsChart.setOption(option);
+        }
+
+        // 更新模型评估指标图表
+        function updateModelMetricsChart(metrics) {
+            if (!metrics) {
+                const option = {
+                    title: { 
+                        text: '模型评估指标 (等待训练...)',
+                        left: 'center'
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        containLabel: true
+                    }
+                };
+                modelMetricsChart.setOption(option);
+                return;
+            }
+
+            const option = {
+                title: {
+                    text: '模型评估指标',
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    }
+                },
+                legend: {
+                    data: ['准确率', '精确率', '召回率', 'F1分数'],
+                    bottom: 10
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '15%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: ['评估指标']
+                },
+                yAxis: {
+                    type: 'value',
+                    min: 0,
+                    max: 1,
+                    interval: 0.1
+                },
+                series: [
+                    {
+                        name: '准确率',
+                        type: 'bar',
+                        data: [metrics.accuracy]
+                    },
+                    {
+                        name: '精确率',
+                        type: 'bar',
+                        data: [metrics.precision]
+                    },
+                    {
+                        name: '召回率',
+                        type: 'bar',
+                        data: [metrics.recall]
+                    },
+                    {
+                        name: 'F1分数',
+                        type: 'bar',
+                        data: [metrics.f1]
+                    }
+                ]
+            };
+
+            modelMetricsChart.setOption(option);
+        }
+
+        // 更新特征重要性图表
+        function updateFeatureImportanceChart(metrics) {
+            if (!metrics || !metrics.feature_names || !metrics.feature_importances) {
+                const option = {
+                    title: { 
+                        text: '特征重要性 (等待训练...)',
+                        left: 'center'
+                    },
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        containLabel: true
+                    }
+                };
+                featureImportanceChart.setOption(option);
+                return;
+            }
+
+            // 将特征名称和重要性值组合并排序
+            const features = metrics.feature_names.map((name, index) => ({
+                name: name,
+                value: metrics.feature_importances[index]
+            })).sort((a, b) => b.value - a.value);
+
+            const option = {
+                title: {
+                    text: '特征重要性',
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: {
+                        type: 'shadow'
+                    },
+                    formatter: function(params) {
+                        const data = params[0];
+                        return `${data.name}: ${(data.value * 100).toFixed(2)}%`;
+                    }
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '15%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'value',
+                    axisLabel: {
+                        formatter: function(value) {
+                            return (value * 100).toFixed(0) + '%';
+                        }
+                    }
+                },
+                yAxis: {
+                    type: 'category',
+                    data: features.map(f => f.name),
+                    axisLabel: {
+                        interval: 0
+                    }
+                },
+                series: [
+                    {
+                        name: '重要性',
+                        type: 'bar',
+                        data: features.map(f => f.value),
+                        itemStyle: {
+                            color: function(params) {
+                                // 使用渐变色
+                                const colorList = ['#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452'];
+                                return colorList[params.dataIndex % colorList.length];
+                            }
+                        },
+                        label: {
+                            show: true,
+                            position: 'right',
+                            formatter: function(params) {
+                                return (params.value * 100).toFixed(2) + '%';
+                            }
+                        }
+                    }
+                ]
+            };
+
+            featureImportanceChart.setOption(option);
+        }
+
+        // 更新所有图表
+        function updateCharts(data) {
+            if (!data) return;
+            
+            updateSoilTypeChart(data.soil_properties);
+            updateSoilTextureChart(data.soil_properties);
+            updateEnvironmentalFactorsChart(data.environmental_factors);
+        }
+
+        // 监听窗口大小变化
+        window.addEventListener('resize', function() {
+            soilTypeChart.resize();
+            soilTextureChart.resize();
+            environmentalFactorsChart.resize();
+            modelMetricsChart.resize();
+            featureImportanceChart.resize();
+        });
+
+        // 在页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化地图尺寸
+            map.invalidateSize();
+            
+            // 加载样本点
+            loadSamplePoints();
+            
+            // 初始化图表
+            updateSoilTypeChart(null);
+            updateSoilTextureChart(null);
+            updateEnvironmentalFactorsChart(null);
+            updateModelMetricsChart(null);
+            updateFeatureImportanceChart(null);
+            
+            // 禁用下载按钮
+            updateDownloadButtons(false);
+            
+            // 绑定训练模型按钮事件
+            const trainButton = document.getElementById('trainModel');
+            if (trainButton) {
+                trainButton.addEventListener('click', handleTraining);
+            }
+            
+            // 绑定预测按钮事件
+            const predictButton = document.getElementById('predict');
+            if (predictButton) {
+                predictButton.addEventListener('click', handlePrediction);
+            }
+            
+            // 绑定筛选事件
+            const cityFilter = document.getElementById('cityFilter');
+            const soilTypeFilter = document.getElementById('soilTypeFilter');
+            const soilTextureFilter = document.getElementById('soilTextureFilter');
+            
+            if (cityFilter) cityFilter.addEventListener('change', filterPoints);
+            if (soilTypeFilter) soilTypeFilter.addEventListener('change', filterPoints);
+            if (soilTextureFilter) soilTextureFilter.addEventListener('change', filterPoints);
+            
+            // 绑定样本点来源选择事件
+            document.querySelectorAll('input[name="samplePointSource"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const customInputDiv = document.getElementById('customPointsInput');
+                    if (customInputDiv) {
+                        customInputDiv.style.display = this.value === 'custom' ? 'block' : 'none';
+                    }
+                });
+            });
+            
+            // 绑定下载模板按钮事件
+            const downloadTemplateBtn = document.getElementById('downloadTemplate');
+            if (downloadTemplateBtn) {
+                downloadTemplateBtn.addEventListener('click', function() {
+                    const template = 'city,latitude,longitude,soil_type,soil_texture,soil_color\n';
+                    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = 'sample_points_template.csv';
+                    link.click();
+                });
+            }
+            
+            // 绑定文件上传事件
+            const fileInput = document.getElementById('samplePointFile');
+            if (fileInput) {
+                fileInput.addEventListener('change', async function(e) {
+                    if (this.files.length === 0) return;
+                    
+                    const file = this.files[0];
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        
+                        const response = await fetch('/api/upload_sample_points', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        if (result.status === 'success') {
+                            showSuccess('样本点数据上传成功');
+                            await loadSamplePoints(); // 重新加载样本点
+                        } else {
+                            throw new Error(result.message);
+                        }
+                    } catch (error) {
+                        showError('上传失败：' + error.message);
+                    }
+                });
+            }
+            
+            // 绑定下载按钮事件
+            document.querySelectorAll('.download-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    if (!this.disabled) {
+                        const format = this.dataset.format;
+                        window.location.href = `/api/download?format=${format}`;
+                    }
+                });
+            });
+        });
+
+        // 显示加载遮罩
+        function showLoading() {
+            document.querySelector('.loading-overlay').style.display = 'flex';
+        }
+
+        // 隐藏加载遮罩
+        function hideLoading() {
+            document.querySelector('.loading-overlay').style.display = 'none';
+        }
+
+        // 修改训练模型函数
+        async function handleTraining() {
+            const statusDiv = document.getElementById('modelStatus');
+            const predictButton = document.getElementById('predict');
+            const trainButton = document.getElementById('trainModel');
+            
+            try {
+                showLoading();
+                // 更新UI状态
+                statusDiv.style.display = 'block';
+                statusDiv.className = 'alert alert-info';
+                statusDiv.textContent = '模型训练中...';
+                trainButton.disabled = true;
+                predictButton.disabled = true;
+                
+                // 发送训练请求
+                const response = await fetch('/api/train', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // 训练成功
+                    statusDiv.className = 'alert alert-success';
+                    statusDiv.textContent = result.message;
+                    predictButton.disabled = false;
+                    
+                    // 更新模型评估指标和特征重要性图表
+                    if (result.metrics) {
+                        updateModelMetricsChart(result.metrics);
+                        updateFeatureImportanceChart(result.metrics);
+                    }
+                    
+                    // 显示成功消息
+                    showSuccess('模型训练成功！');
+                } else {
+                    // 训练失败
+                    throw new Error(result.message || '训练失败');
+                }
+            } catch (error) {
+                // 处理错误
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.textContent = '训练失败：' + error.message;
+                predictButton.disabled = true;
+                
+                // 重置图表
+                updateModelMetricsChart(null);
+                updateFeatureImportanceChart(null);
+                
+                // 显示错误消息
+                showError('训练失败：' + error.message);
+            } finally {
+                // 恢复按钮状态
+                trainButton.disabled = false;
+                hideLoading();
+            }
+        }
+
+        // 修改预测函数
+        async function handlePrediction() {
+            const progressBar = document.getElementById('predictionProgress');
+            const statusText = document.getElementById('predictionStatus');
+            const predictButton = document.getElementById('predict');
+            const predictionDetails = document.getElementById('predictionDetails');
+            const exportOptions = document.getElementById('exportOptions');
+            
+            try {
+                showLoading();
+                // 禁用预测按钮
+                predictButton.disabled = true;
+                
+                // 重置进度条和状态
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                statusText.textContent = '开始预测...';
+                predictionDetails.style.display = 'none';
+                exportOptions.style.display = 'none';
+                
+                // 模拟进度更新
+                let progress = 0;
+                const progressInterval = setInterval(() => {
+                    progress += 5;
+                    if (progress <= 90) {
+                        progressBar.style.width = progress + '%';
+                        progressBar.textContent = progress + '%';
+                        statusText.textContent = `预测进行中... ${progress}%`;
+                    }
+                }, 500);
+                
+                // 发送预测请求
+                const response = await fetch('/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                clearInterval(progressInterval);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                if (result.status === 'success') {
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    statusText.textContent = '预测完成';
+                    
+                    // 显示预测详情
+                    predictionDetails.style.display = 'block';
+                    exportOptions.style.display = 'block';
+                    
+                    // 更新预测统计信息
+                    updatePredictionStats(result.data);
+                    
+                    // 更新图表
+                    updateCharts(result.data);
+                    
+                    // 启用下载按钮
+                    updateDownloadButtons(true);
+                    
+                    // 在地图上显示预测结果
+                    displayPredictionResults(result.data);
+                } else {
+                    throw new Error(result.message || '预测失败');
+                }
+            } catch (error) {
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                statusText.textContent = '预测失败：' + error.message;
+                
+                // 禁用下载按钮
+                updateDownloadButtons(false);
+                
+                // 显示错误信息
+                showError('预测失败：' + error.message);
+            } finally {
+                // 重新启用预测按钮
+                predictButton.disabled = false;
+                hideLoading();
+            }
+        }
+
+        // 更新预测统计信息
+        function updatePredictionStats(data) {
+            const statsContainer = document.getElementById('predictionStats');
+            if (!data || !data.soil_properties) return;
+            
+            let statsHtml = '<div class="row">';
+            
+            // 计算总点数
+            let totalPoints = 0;
+            Object.values(data.soil_properties.soil_types).forEach(cityTypes => {
+                Object.values(cityTypes).forEach(count => {
+                    totalPoints += count;
+                });
+            });
+            
+            // 土壤类型统计
+            const typeStats = calculateStats(data.soil_properties.soil_types);
+            statsHtml += `
+                <div class="col-md-6">
+                    <h6>土壤类型分布</h6>
+                    <ul class="list-unstyled">
+                        ${Object.entries(typeStats).map(([type, count]) => 
+                            `<li>${type}: ${count}个点 (${((count/totalPoints)*100).toFixed(1)}%)</li>`
+                        ).join('')}
+                    </ul>
+                </div>
+            `;
+            
+            // 土壤质地统计
+            const textureStats = calculateStats(data.soil_properties.soil_textures);
+            statsHtml += `
+                <div class="col-md-6">
+                    <h6>土壤质地分布</h6>
+                    <ul class="list-unstyled">
+                        ${Object.entries(textureStats).map(([texture, count]) => 
+                            `<li>${texture}: ${count}个点 (${((count/totalPoints)*100).toFixed(1)}%)</li>`
+                        ).join('')}
+                    </ul>
+                </div>
+            `;
+            
+            statsHtml += '</div>';
+            statsContainer.innerHTML = statsHtml;
+        }
+
+        // 计算统计数据
+        function calculateStats(data) {
+            const stats = {};
+            Object.values(data).forEach(cityData => {
+                Object.entries(cityData).forEach(([key, value]) => {
+                    stats[key] = (stats[key] || 0) + value;
+                });
+            });
+            return stats;
+        }
+
+        // 在地图上显示预测结果
+        function displayPredictionResults(data) {
+            if (!data || !data.predictions) return;
+            
+            // 清除现有标记
+            markers.clearLayers();
+            
+            // 添加预测结果标记
+            data.predictions.forEach(point => {
+                const marker = L.circleMarker([point.latitude, point.longitude], {
+                    radius: 8,
+                    fillColor: getColorForSoilType(point.soil_type),
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                });
+                
+                const popupContent = `
+                    <div class="sample-point-popup">
+                        <h6>${point.city || '未知地区'}</h6>
+                        <table class="table table-sm">
+                            <tr><td>预测土壤类型:</td><td>${point.soil_type || '未知'}</td></tr>
+                            <tr><td>预测土壤质地:</td><td>${point.soil_texture || '未知'}</td></tr>
+                            <tr><td>经度:</td><td>${point.longitude.toFixed(4)}</td></tr>
+                            <tr><td>纬度:</td><td>${point.latitude.toFixed(4)}</td></tr>
+                        </table>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+                markers.addLayer(marker);
+            });
+            
+            map.addLayer(markers);
+            map.fitBounds(markers.getBounds());
+        }
+
+        // 根据土壤类型获取颜色
+        function getColorForSoilType(soilType) {
+            const colorMap = {
+                '红壤': '#e74c3c',
+                '黄壤': '#f1c40f',
+                '棕壤': '#d35400',
+                '黑土': '#2c3e50',
+                '水稻土': '#27ae60',
+                '紫色土': '#8e44ad',
+                '潮土': '#3498db',
+                '其他': '#95a5a6'
+            };
+            return colorMap[soilType] || '#95a5a6';
+        }
+
+        // 响应窗口大小变化
+        window.addEventListener('resize', () => {
+            soilTypeChart.resize();
+            soilTextureChart.resize();
+            environmentalFactorsChart.resize();
+            modelMetricsChart.resize();
+            featureImportanceChart.resize();
+            map.invalidateSize();
+        });
+
+        // 更新下载按钮状态
+        function updateDownloadButtons(enabled) {
+            document.querySelectorAll('.download-btn').forEach(button => {
+                button.disabled = !enabled;
+            });
+        }
+
+        // 显示成功消息
+        function showSuccess(message) {
+            const statusDiv = document.getElementById('modelStatus');
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'alert alert-success';
+            statusDiv.textContent = message;
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            const statusDiv = document.getElementById('modelStatus');
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'alert alert-danger';
+            statusDiv.textContent = message;
+        }
+    </script>
+</body>
+</html> 
