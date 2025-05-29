@@ -106,7 +106,7 @@ python app.py
    - 文件格式是否为CSV
    - 文件大小是否超过限制
    - 文件是否包含所有必要字段
-3. - 复现此项目需要的gdal包安装可能比较复杂，需要在github上找到py相应的版本的whl文件通过pip install安装
+3. 复现此项目需要的gdal包安装可能比较复杂，需要在github上找到py相应的版本的whl文件通过pip install安装
 ## 技术支持
 
 如有问题，请提交Issue或联系技术支持。
