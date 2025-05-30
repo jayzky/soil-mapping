@@ -37,6 +37,10 @@ source venv/bin/activate
 
 3. 安装依赖包：
 ```bash
+python -m pip install --upgrade pip
+pip install --upgrade setuptools wheel
+pip install numpy
+pip install pandas
 pip install -r requirements.txt
 ```
 
