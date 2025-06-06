@@ -15,6 +15,7 @@ from werkzeug.utils import secure_filename
 import geopandas as gpd
 from shapely.geometry import Point
 import contextily as ctx
+from werkzeug.middleware.proxy_fix import ProxyFix # 1. 导入 ProxyFix
 
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,8 +25,14 @@ app = Flask(__name__,
            template_folder=os.path.join(current_dir, 'templates'),
            static_folder=os.path.join(current_dir, 'static'))
 
+# 2. 添加 ProxyFix 中间件
+# 告诉应用去信任 Nginx 传来的 X-Forwarded-For, X-Forwarded-Proto 和 X-Script-Name (即 x_prefix)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+)
+
 # 配置文件上传
-UPLOAD_FOLDER = os.path.join(current_dir, '..', 'data', 'uploads')
+UPLOAD_FOLDER = os.path.join(current_dir, 'data', 'uploads')
 ALLOWED_EXTENSIONS = {'csv'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -40,7 +47,7 @@ prediction_results = None
 def load_data():
     """加载原始土壤数据"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(current_dir, '..', 'data', 'raw', 'soil_data.csv')
+    data_path = os.path.join(current_dir, 'data', 'raw', 'soil_data.csv')
     try:
         df = pd.read_csv(data_path, encoding='utf-8')
         # 确保必要的列存在
@@ -826,4 +833,4 @@ def generate_confusion_matrix(df):
         return None
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False) 
+    app.run(debug=False, use_reloader=False) 

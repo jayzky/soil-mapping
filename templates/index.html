@@ -331,7 +331,7 @@
         // 加载样本点
         async function loadSamplePoints() {
             try {
-                const response = await fetch('/api/sample_points');
+                const response = await fetch('api/sample_points');
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -410,7 +410,7 @@
             markers.clearLayers();
 
             // 重新获取并筛选样本点
-            fetch('/api/sample_points')
+            fetch('api/sample_points')
                 .then(response => response.json())
                 .then(data => {
                     if (data.status !== 'success' || !data.points || !Array.isArray(data.points)) {
@@ -1001,7 +1001,7 @@
                         const formData = new FormData();
                         formData.append('file', file);
                         
-                        const response = await fetch('/api/upload_sample_points', {
+                        const response = await fetch('api/upload_sample_points', {
                             method: 'POST',
                             body: formData
                         });
@@ -1056,7 +1056,7 @@
                 predictButton.disabled = true;
                 
                 // 发送训练请求
-                const response = await fetch('/api/train', {
+                const response = await fetch('api/train', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -1132,7 +1132,7 @@
                 }, 500);
                 
                 // 发送预测请求
-                const response = await fetch('/api/predict', {
+                const response = await fetch('api/predict', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
