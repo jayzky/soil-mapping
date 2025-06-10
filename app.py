@@ -16,6 +16,11 @@ import geopandas as gpd
 from shapely.geometry import Point
 import contextily as ctx
 from werkzeug.middleware.proxy_fix import ProxyFix # 1. 导入 ProxyFix
+from mplfonts import use_font # 导入 use_font
+
+# 使用一个支持中文的字体，例如 'SimHei' (黑体)
+# mplfonts 会尝试下载并使用该字体（如果本地没有）
+use_font('Noto Sans CJK SC')
 
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
